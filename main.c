@@ -1,104 +1,90 @@
-#include <Arduino.h>
-#ifdef ESP32
-#include <WiFi.h>
-#define RELAY_PIN_1 12
-#define RELAY_PIN_2 14
-#else
-#include <ESP8266WiFi.h>
-#define RELAY_PIN_1 D1
-#define RELAY_PIN_2 D2
-#endif
-#include "fauxmoESP.h"
+#include <ESP8266WiFi.h>  
+#include <Servo.h> 
+#include "SinricPro.h"
+#include "SinricProSwitch.h"
 
-#define SERIAL_BAUDRATE 115200
+#define WIFI_SSID         "brisa-2420254"    
+#define WIFI_PASS         "bxsrsxhh"
+#define APP_KEY           "06eb76e1-d305-4d22-965d-631e0ccb1b55" 
+#define APP_SECRET        "945765ff-6919-480f-bf5b-6972ffcd85aa-4f2bd35b-6831-4e2b-9b0d-ab82c702be0b"
 
-#define WIFI_SSID "LG House"
-#define WIFI_PASS "LG19931995"
+#define Lampada_ID       "6319e82d36b44d06d4b6350b"    
+#define Lampada_Pin 4    // O pino fisico onde está ligado
+#define Porta_ID         "631a408236b44d06d4b693f1"
+#define Porta_Pin 5      // O pino fisico onde esta ligado o portao
+#define Luzes_ID         "631a630736b44d06d4b6ab75"
+#define Luzes_Pin 0      // O pino fisico onde esta ligado as luzes de fora
 
-#define LAMP_1 "LED 1"
-#define LAMP_2 "LED 2"
+#define BAUD_RATE         115200               
+bool myPowerState = false;
 
-fauxmoESP fauxmo;
-
-
-// Wi-Fi Conexão
-void wifiSetup() {
-
-  // Define o como STA
-  WiFi.mode(WIFI_STA);
-
-  // Conecta
-  Serial.printf("[WIFI] Conectado ao %s ", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-  // Espera
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(100);
-  }
-  Serial.println();
-
-  // Conectado
-  Serial.printf("[WIFI] STATION Mode, SSID: %s, IP address: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-}
-
+void setupWiFi();
+void setupSinricPro();
+bool LampadaState(const String &deviceId, bool &state);
+bool LuzesState(const String &deviceId, bool &state);
+bool PortaState(const String &deviceId, bool &state);
+Servo myservo;
+// main setup function
 void setup() {
-  // Inicia a Serial
-  Serial.begin(SERIAL_BAUDRATE);
-  Serial.println();
-
-  // Conexão Wi-Fi
-  wifiSetup();
-
-  // LED
-  pinMode(RELAY_PIN_1, OUTPUT);
-  digitalWrite(RELAY_PIN_1, LOW);
-
-  pinMode(RELAY_PIN_2, OUTPUT);
-  digitalWrite(RELAY_PIN_2, LOW);
-
-  
-  fauxmo.createServer(true); 
-  fauxmo.setPort(80); 
-
-  
-  fauxmo.enable(true);
-
-
-  fauxmo.addDevice(LAMP_1);
-  fauxmo.addDevice(LAMP_2);
-
-  fauxmo.onSetState([](unsigned char device_id, const char * device_name, bool state, unsigned char value) {
-
-    Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
-    if ( (strcmp(device_name, LAMP_1) == 0) ) {
-      Serial.println("RELAY 1 switched by Alexa");
-      if (state) {
-        digitalWrite(RELAY_PIN_1, HIGH);
-      } else {
-        digitalWrite(RELAY_PIN_1, LOW);
-      }
-    }
-    if ( (strcmp(device_name, LAMP_2) == 0) ) {
-      Serial.println("RELAY 2 switched by Alexa");
-      if (state) {
-        digitalWrite(RELAY_PIN_2, HIGH);
-      } else {
-        digitalWrite(RELAY_PIN_2, LOW);
-      }
-    }
-  });
-
+  Serial.begin(BAUD_RATE); Serial.printf("\r\n\r\n");
+  setupWiFi();
+  setupSinricPro(); 
+  myservo.attach(2);
+ 
+  pinMode(Lampada_Pin, OUTPUT);
+  pinMode(Porta_Pin, OUTPUT);
+  pinMode(Luzes_Pin, OUTPUT);
+ 
 }
 
 void loop() {
+  SinricPro.handle();
+}
 
-  fauxmo.handle();
+bool LampadaState(const String &deviceId, bool &state) {
+  Serial.printf("A lampada foi %s\r\n", state?"ligada":"desligada");
+  digitalWrite(Lampada_Pin, state);
+  return true; 
+}
+bool LuzesState(const String &deviceId, bool &state) {
+  Serial.printf("As luzes foram %s\r\n", state?"ligadas":"desligadas");
+  digitalWrite(Luzes_Pin, state);
+  return true; 
+}
+bool  PortaState(const String &deviceId, bool &state) {
+  Serial.printf("A porta foi %s\r\n", state?"Aberta":"Fechada");
+  digitalWrite(Porta_Pin, state);
+  return true; 
+}
 
-  static unsigned long last = millis();
-  if (millis() - last > 5000) {
-    last = millis();
-    Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
+// setup das conexões Wifi
+void setupWiFi() {
+  Serial.printf("\r\n[Wifi]: Conectando...");
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.printf(".");
+    delay(250);
   }
 
+  Serial.printf("Conectado!\r\n[WiFi]: Endereço de IP e %s\r\n", WiFi.localIP().toString().c_str());
+}
+// setup das funções para o SinricPro
+void setupSinricPro() {
+  // add devices and callbacks to SinricPro
+
+  SinricProSwitch &mySwitch2 = SinricPro[Lampada_ID];
+  mySwitch2.onPowerState(LampadaState);
+
+  SinricProSwitch &mySwitch1 = SinricPro[Porta_ID];
+  mySwitch1.onPowerState(PortaState);
+
+  SinricProSwitch &mySwitch3 = SinricPro[Luzes_ID];
+  mySwitch3.onPowerState(LuzesState);
+
+  
+  // setup SinricPro
+  SinricPro.onConnected([](){ Serial.printf("Conectado a nuvem SinricPro\r\n"); }); 
+  SinricPro.onDisconnected([](){ Serial.printf("Desconectado a nuvem SinricPro\r\n"); });
+  SinricPro.begin(APP_KEY, APP_SECRET);
 }
